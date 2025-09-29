@@ -24,9 +24,9 @@ export interface LLMModel {
 }
 
 export const DEFAULT_LLM_CONFIG: LLMConfig = {
-    provider: 'local',
+    provider: 'openai', // Default to OpenAI for deployed version
     serverUrl: 'http://localhost:11434',
-    selectedModel: 'llama3.1:8b',
+    selectedModel: 'gpt-4o-mini',
     temperature: 0.3,
     topP: 0.9,
     timeout: 30000, // 30 seconds

@@ -311,8 +311,8 @@ export function LLMSettings({ onConfigChange }: LLMSettingsProps) {
                                 </Select>
                                 <p className="text-xs text-muted-foreground">
                                     {config.provider === 'openai'
-                                        ? 'Uses OpenAI API (requires API key in .env.local)'
-                                        : 'Connect to your local Ollama server'}
+                                        ? 'Uses OpenAI API - works everywhere, no local installation needed'
+                                        : '⚠️ Requires Ollama running on your local machine (will not work on deployed versions)'}
                                 </p>
                             </div>
 
