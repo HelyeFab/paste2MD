@@ -312,13 +312,13 @@ export function LLMSettings({ onConfigChange }: LLMSettingsProps) {
                                 <p className="text-xs text-muted-foreground">
                                     {config.provider === 'openai'
                                         ? 'Uses OpenAI API - works everywhere, no local installation needed'
-                                        : '⚠️ Requires Ollama running on your local machine (will not work on deployed versions)'}
+                                        : 'Connects to Ollama running on your machine (localhost) or network'}
                                 </p>
                             </div>
 
                             {config.provider === 'local' && (
                                 <div className="space-y-2">
-                                    <Label htmlFor="serverUrl">Server URL</Label>
+                                    <Label htmlFor="serverUrl">Ollama Server URL</Label>
                                     <div className="flex gap-2">
                                         <Input
                                             id="serverUrl"
@@ -340,6 +340,9 @@ export function LLMSettings({ onConfigChange }: LLMSettingsProps) {
                                             Test
                                         </Button>
                                     </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Your local Ollama server address. Change this if running on a different machine or port.
+                                    </p>
                                     {connectionStatus === 'success' && (
                                         <div className="flex items-center gap-2 text-sm text-green-600">
                                             <CheckCircle className="h-4 w-4" />

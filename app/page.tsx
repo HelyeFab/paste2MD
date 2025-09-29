@@ -74,46 +74,181 @@ export default function Home() {
   useEffect(() => {
     if (!llmConfig) return
 
-    const params = new URLSearchParams({
-      provider: llmConfig.provider,
-      serverUrl: llmConfig.serverUrl,
-      selectedModel: llmConfig.selectedModel,
-    })
+    const checkAvailability = async () => {
+      if (llmConfig.provider === 'local') {
+        // Test Ollama directly from browser
+        try {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-    fetch(`/api/enhance?${params}`)
-      .then(res => res.json())
-      .then(data => {
-        setAiAvailable(data.available && data.hasModel)
-        if (data.available && !data.hasModel) {
-          toast({
-            variant: "destructive",
-            title: "AI Model Missing",
-            description: `Model "${llmConfig.selectedModel}" not found. Check your LLM settings.`,
+          const response = await fetch(`${llmConfig.serverUrl}/api/tags`, {
+            signal: controller.signal,
           })
+
+          clearTimeout(timeoutId)
+
+          if (response.ok) {
+            const data = await response.json()
+            const models = data.models?.map((m: any) => m.name) || []
+            const hasModel = models.includes(llmConfig.selectedModel)
+            setAiAvailable(hasModel || models.length > 0)
+
+            if (!hasModel && models.length > 0) {
+              toast({
+                variant: "destructive",
+                title: "AI Model Missing",
+                description: `Model "${llmConfig.selectedModel}" not found. Available: ${models.slice(0, 3).join(', ')}`,
+              })
+            }
+          } else {
+            setAiAvailable(false)
+          }
+        } catch (err) {
+          setAiAvailable(false)
         }
-      })
-      .catch(() => setAiAvailable(false))
+      } else {
+        // Check OpenAI through API route
+        const params = new URLSearchParams({
+          provider: llmConfig.provider,
+          serverUrl: llmConfig.serverUrl,
+          selectedModel: llmConfig.selectedModel,
+        })
+
+        fetch(`/api/enhance?${params}`)
+          .then(res => res.json())
+          .then(data => {
+            setAiAvailable(data.available && data.hasModel)
+            if (data.available && !data.hasModel) {
+              toast({
+                variant: "destructive",
+                title: "AI Model Missing",
+                description: `Model "${llmConfig.selectedModel}" not found. Check your LLM settings.`,
+              })
+            }
+          })
+          .catch(() => setAiAvailable(false))
+      }
+    }
+
+    checkAvailability()
   }, [llmConfig])
 
-  const processWithAI = async (text: string): Promise<string> => {
+  const callOllamaDirectly = async (text: string): Promise<string> => {
+    if (!llmConfig) throw new Error('No LLM config')
+
+    const emojiInstructions = addEmojis
+      ? `4. Add appropriate and relevant emojis to headers and sections to make them visually appealing. Use emojis that match the content (e.g., 📊 for data, 🍳 for cooking, 📝 for forms, etc.). Place emojis at the beginning of headers.`
+      : `4. Do NOT add any emojis to the text.`
+
+    const customInstructionText = customInstructions
+      ? `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customInstructions}\n`
+      : ''
+
+    const prompt = `You are a markdown formatting expert. Convert the following text into well-formatted markdown.
+
+CRITICAL RULES - YOU MUST FOLLOW THESE EXACTLY:
+
+1. TABLES ARE SACRED - NEVER REMOVE TABLES:
+   - If you detect any tabular data (text aligned in columns with consistent spacing), you MUST convert it to a markdown table
+   - Use | separators between columns
+   - Add a header separator row (|---|---|) after the first row
+   - NEVER convert tables to lists or paragraphs
+   - Example of table format:
+     | Column 1 | Column 2 | Column 3 |
+     |----------|----------|----------|
+     | Data 1   | Data 2   | Data 3   |
+
+2. Headers: use # for main titles, ## for sections, ### for subsections
+
+3. Lists:
+   - Convert bullet points to proper markdown lists
+   - Preserve numbered lists with correct formatting
+
+${emojiInstructions}
+
+5. Text formatting:
+   - Bold: **text**
+   - Italic: *text*
+   - Code: \`code\`
+
+6. Code blocks: Use \`\`\` for multi-line code
+
+7. URLs: Convert to [text](url) format
+
+8. PRESERVE ALL CONTENT:
+   - Do not remove or summarize any information
+   - Keep all data intact
+   - Maintain the original structure as much as possible
+
+${customInstructionText}
+
+REMEMBER: If you see data that looks like a table (rows and columns of information), you MUST format it as a markdown table. This is non-negotiable.
+
+Text to convert:
+${text}
+
+Return ONLY the formatted markdown, no explanations or comments. DO NOT remove tables or convert them to other formats.`
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), llmConfig.timeout || 30000)
+
     try {
-      const response = await fetch('/api/enhance', {
+      const response = await fetch(`${llmConfig.serverUrl}/api/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
         body: JSON.stringify({
-          text,
-          addEmojis,
-          customInstructions,
-          llmConfig
-        })
+          model: llmConfig.selectedModel,
+          prompt: prompt,
+          stream: false,
+          options: {
+            temperature: llmConfig.temperature || 0.3,
+            top_p: llmConfig.topP || 0.9,
+          }
+        }),
       })
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error('AI enhancement failed')
+        throw new Error(`Ollama API error: ${response.statusText}`)
       }
 
       const data = await response.json()
-      return data.markdown || text
+      return data.response || text
+    } catch (err: any) {
+      clearTimeout(timeoutId)
+      throw err
+    }
+  }
+
+  const processWithAI = async (text: string): Promise<string> => {
+    try {
+      if (llmConfig?.provider === 'local') {
+        // Call Ollama directly from browser
+        return await callOllamaDirectly(text)
+      } else {
+        // Call OpenAI through API route (keeps API key secure)
+        const response = await fetch('/api/enhance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            addEmojis,
+            customInstructions,
+            llmConfig
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error('AI enhancement failed')
+        }
+
+        const data = await response.json()
+        return data.markdown || text
+      }
     } catch (err: any) {
       console.error('AI enhancement error:', err)
       toast({
